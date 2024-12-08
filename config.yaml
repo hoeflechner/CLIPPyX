@@ -5,7 +5,8 @@ clip:
   provider: mobileclip
 deep_scan: false
 exclude_directories: []
-include_directories: []
+include_directories:
+- /home/atw11em8/git/CLIPPyX/exampleImages
 scan_method: default
 text_embed:
   HF_transformers_embeddings: nomic-ai/nomic-embed-text-v1.5
@@ -14,4 +15,4 @@ text_embed:
   openai_api_key: <openai_api_key>
   openai_endpoint: https://api.openai.com/v1
   openai_model: text-embedding-ada-002
-  provider: ollama
+  provider: HF_transformers

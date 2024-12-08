@@ -1,0 +1,1 @@
+for i in `seq 100`; do wget https://picsum.photos/200/300 && mv 300 $i.jpg; done

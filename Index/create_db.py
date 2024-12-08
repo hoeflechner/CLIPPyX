@@ -5,6 +5,7 @@ import sys
 import yaml
 from Index.scan import read_from_csv
 import warnings
+from metadata.exif import get_exifdata
 
 warnings.filterwarnings("ignore")
 
@@ -76,7 +77,7 @@ def index_images(image_collection, text_collection):
         image_collection (Collection): The image collection in the database.
         text_collection (Collection): The text collection in the database.
     """
-    paths, averages = read_from_csv("paths.csv")
+    paths, averages = read_from_csv("../db/paths.csv")
     with tqdm(total=len(paths), desc="Indexing images") as pbar:
         for i in range(0, len(paths), batch_size):
             batch_paths = paths[i : i + batch_size]
@@ -113,13 +114,33 @@ def index_images(image_collection, text_collection):
                 )
                 ocr_texts = apply_OCR(to_process)
 
-                # Process OCR and text embeddings individually
+                #path and exif
+                for i in range(len(to_process)):
+                    text=to_process[i]+' '+get_exifdata(to_process[i])
+                    text_embeddings=get_text_embeddings(text)
+                    text_collection.upsert(
+                            ids=[to_process[i]], embeddings=[text_embeddings]
+                        )
+                    
+                #Process OCR and text embeddings individually
                 for i in range(len(to_process)):
                     if ocr_texts[i] is not None:
                         text_embeddings = get_text_embeddings(ocr_texts[i])
                         text_collection.upsert(
                             ids=[to_process[i]], embeddings=[text_embeddings]
                         )
+                
+               
+
+
+                #add path
+                               
+                # for path in to_process:
+                #     path_as_words=path.replace("/"," ").replace("\\"," ").replace("."," ")
+                #     path_embeddings = get_clip_text(path_as_words)
+                #     image_collection.upsert(
+                #         ids=path, embeddings=path_embeddings
+                #     )   
 
             pbar.update(min(batch_size, len(paths) - i))
 
@@ -137,7 +158,7 @@ def clean_index(image_collection, text_collection, verbose=False):
         image_collection (Collection): The image collection in the database.
         text_collection (Collection): The text collection in the database.
     """
-    paths, averages = read_from_csv("paths.csv")
+    paths, averages = read_from_csv("../db/paths.csv")
     for i, id in tqdm(
         enumerate(image_collection.get()["ids"]),
         total=len(image_collection.get()["ids"]),
