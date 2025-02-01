@@ -4,25 +4,15 @@ from Index.scan_default import fast_scan_for_images
 from concurrent.futures import ThreadPoolExecutor
 import yaml
 from tqdm import tqdm
-from PIL import Image
+import hashlib
 
-
-def process_image(path):
-    try:
-        with Image.open(path) as img:
-            try:
-                first_channel = img.split()[0]
-                pixel_data = list(first_channel.getdata())
-            except AttributeError:
-                pixel_data = list(img.getdata())
-            total = sum(pixel_data)
-            num_pixels = len(pixel_data)
-            average = int(total / num_pixels)
-        return (path, average)
-    except Exception as e:
-        print(f"Error processing {path}: {e}")
-        return (path, 0)
-
+def process_hash(path):
+    with open(path, 'rb') as file_to_check:
+        # read contents of the file
+        data = file_to_check.read()    
+        # pipe contents of the file through
+        md5 = hashlib.md5(data).hexdigest()
+    return md5
 
 def getDb(path="db"):
     client = chromadb.PersistentClient(
@@ -33,8 +23,7 @@ def getDb(path="db"):
     )
     return paths
 
-
-def save_to_db(image_paths, save_average=False, db="db"):
+def save_to_db(image_paths, save_hash=False, db="db"):
     paths_collection = getDb(db)
     ### Delete existing paths before inserting new ones.
     ids=paths_collection.get()["ids"]
@@ -44,20 +33,22 @@ def save_to_db(image_paths, save_average=False, db="db"):
     image_paths = [path.replace("\\", "/") for path in image_paths]
     image_paths = list(set(image_paths))
 
-    if save_average:
+    upsert_metadatas = []
+     
+    if save_hash:
         with ThreadPoolExecutor() as executor:
-            results = list(
+            hash = list(
                 tqdm(
-                    executor.map(process_image, image_paths), total=len(image_paths)
+                    executor.map(process_hash, image_paths), desc="Hashing", total=len(image_paths)
                 )
             )
-        upsert_metadatas = [
-            {"average": result[1]} for result in results
-        ]
     else:
-        upsert_metadatas = [
-            {"average": 0} for i in image_paths
+        hash = [
+            0 for i in image_paths
         ]
+        
+    for i, path in enumerate(image_paths):
+        upsert_metadatas.append({ "hash": hash[i] })
         # Perform batch upsert for image collection
     upsert_embeddings = [[0] for i in image_paths]
     paths_collection.upsert(
@@ -69,17 +60,17 @@ def save_to_db(image_paths, save_average=False, db="db"):
 
 def read_from_db(db="db"):
     """
-    Reads image paths and, optionally, their average pixel values from the db.
+    Reads image paths and, optionally, their hashes from the db.
 
     Returns:
         tuple: Depending on read_average, returns a tuple containing one or two lists: one of the image paths and, if read_average is True, one of their average pixel values.
     """
     paths_collection = getDb(db)
     paths = paths_collection.get()["ids"]
-    averages = [paths_collection.get(
-        ids=[path])["metadatas"][0]["average"] for path in paths]
+    hashes = [paths_collection.get(
+        ids=[path])["metadatas"][0]["hash"] for path in paths]
 
-    return (paths, averages)
+    return (paths, hashes)
 
 
 def scan_and_save():

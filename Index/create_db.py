@@ -1,3 +1,4 @@
+from concurrent.futures import ThreadPoolExecutor
 import chromadb
 from tqdm import tqdm
 import os
@@ -5,8 +6,18 @@ import sys
 import yaml
 from Index.scan import read_from_db
 import warnings
+from metadata.exif import get_exifdata
+from PIL import Image
 
 warnings.filterwarnings("ignore")
+
+def process_exif(path):
+    try:
+        with Image.open(path) as img:
+            return get_exifdata(img)
+    except Exception as e:
+        print(f"Error in exif {path}: {e}")
+        return {}
 
 # Load the configuration file
 with open("config.yaml", "r") as f:
@@ -76,7 +87,7 @@ def index_images(image_collection, text_collection):
         image_collection (Collection): The image collection in the database.
         text_collection (Collection): The text collection in the database.
     """
-    paths, averages = read_from_db()
+    paths, hashes = read_from_db()
     with tqdm(total=len(paths), desc="Indexing images") as pbar:
         for i in range(0, len(paths), batch_size):
             batch_paths = paths[i : i + batch_size]
@@ -85,16 +96,25 @@ def index_images(image_collection, text_collection):
             for path in batch_paths:
                 if len(image_collection.get(ids=[path])["ids"]) > 0:
                     if deep_scan:
-                        # Check if the average pixel value has changed
-                        average = image_collection.get(ids=[path])["metadatas"][0][
-                            "average"
-                        ]
-                        if average != averages[paths.index(path)]:
+                        # Check if the hash has changed
+                        try:
+                            hash = image_collection.get(ids=[path])["metadatas"][0][
+                                "hash"
+                            ]
+                            if hash != hashes[paths.index(path)]:
+                                to_process.append(path)
+                        except:
                             to_process.append(path)
                 else:
                     to_process.append(path)
 
             if to_process:
+                
+                with ThreadPoolExecutor() as executor:
+                    exifs = list(
+                            executor.map(process_exif, to_process)
+                        )
+                
                 # Process CLIP embeddings in batch
                 image_embeddings = get_clip_image(to_process)
 
@@ -102,7 +122,7 @@ def index_images(image_collection, text_collection):
                 upsert_ids = to_process
                 upsert_embeddings = image_embeddings
                 upsert_metadatas = [
-                    {"average": averages[paths.index(path)]} for path in to_process
+                    {"hash": hashes[paths.index(path)], **exifs[i]} for i,path in enumerate(to_process)
                 ]
 
                 # Perform batch upsert for image collection

@@ -1,3 +1,5 @@
+import subprocess
+import sys
 from flask import Flask, abort, request, jsonify, send_from_directory
 from flask_cors import CORS
 from Index.create_db import (
@@ -145,11 +147,20 @@ def ebmed_text_route():
     #     print(f"Path: {path}, Distance: {distance}")
     return jsonify(paths)
 
+@app.route("/rescan")
+def rescan():
+    result = subprocess.run([sys.executable, "create_index.py"])
+
+    if result.returncode != 0:
+        print(f"Error rescanning: {result.stderr}")
+    else:
+        print(f"Successfully rescanned: {result.stdout}")
+        
+    return send_from_directory(app.static_folder, "index.html")
 
 @app.route("/")
 def serve_index():
     return send_from_directory(app.static_folder, "index.html")
-
 
 @app.route("/images/<path:filename>")
 def serve_image(filename):
